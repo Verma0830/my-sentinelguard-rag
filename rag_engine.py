@@ -3,16 +3,10 @@ import sys
 import glob
 from typing import List, Dict, Any
 
-# Set writable cache directories for Vercel serverless environment
-os.environ["FASTEMBED_CACHE_DIR"] = "/tmp/fastembed_cache"
-os.environ["HF_HOME"] = "/tmp/hf_home"
-os.environ["TMPDIR"] = "/tmp"
-os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
-
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 from langchain_community.document_loaders import TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_chroma import Chroma
-from langchain_community.embeddings import FastEmbedEmbeddings
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
@@ -21,17 +15,13 @@ from langchain_core.documents import Document
 class RAGEngine:
     def __init__(self, google_api_key: str = None):
         self.google_api_key = google_api_key or os.getenv("GOOGLE_API_KEY")
-        self.embeddings = FastEmbedEmbeddings(
-            model_name="BAAI/bge-small-en-v1.5",
-            cache_dir="/tmp/fastembed_cache"
-        )
-        self._vector_store = None
+        self.vectorizer = None
+        self.tfidf_matrix = None
+        self.chunks = []
+        self._initialize_index()
 
-    def _get_vector_store(self) -> Chroma:
-        """Returns or builds an in-memory Chroma vector store (100% RAM, zero disk write errors)."""
-        if self._vector_store is not None:
-            return self._vector_store
-
+    def _initialize_index(self):
+        """Loads security documents and builds a lightweight TF-IDF Vector Index in RAM (Zero disk space required)."""
         data_dir = os.path.join(os.path.dirname(__file__), "data", "microsoft_security")
         md_files = glob.glob(os.path.join(data_dir, "*.md"))
         
@@ -54,19 +44,16 @@ class RAGEngine:
             chunk_overlap=100,
             separators=["\n\n", "\n", " ", ""]
         )
-        chunks = text_splitter.split_documents(all_docs)
+        self.chunks = text_splitter.split_documents(all_docs)
 
-        # In-memory Chroma vector store (no persist_directory = 100% RAM operation)
-        self._vector_store = Chroma.from_documents(
-            documents=chunks,
-            embedding=self.embeddings
-        )
-        return self._vector_store
+        # Fit TF-IDF Vectorizer across all security chunks in RAM
+        corpus = [doc.page_content for doc in self.chunks]
+        self.vectorizer = TfidfVectorizer(stop_words="english", ngram_range=(1, 2))
+        self.tfidf_matrix = self.vectorizer.fit_transform(corpus)
 
     def create_vector_store(self, file_paths: List[str] = None, **kwargs) -> int:
-        """Compatibility helper to initialize vector store."""
-        vs = self._get_vector_store()
-        return 199
+        """Compatibility helper."""
+        return len(self.chunks)
 
     def query(
         self, 
@@ -74,9 +61,24 @@ class RAGEngine:
         top_k: int = 4, 
         model_name: str = "nvidia/nemotron-3.5-lightning:free"
     ) -> Dict[str, Any]:
-        """Queries the RAG pipeline using in-memory Chroma vector store & LLM."""
-        vector_store = self._get_vector_store()
-        retrieved_docs = vector_store.similarity_search(user_query, k=top_k)
+        """Queries the RAG pipeline using zero-disk TF-IDF Vector Similarity & LLM."""
+        if not self.chunks or self.vectorizer is None:
+            return {
+                "answer": "No security documents found in index.",
+                "sources": []
+            }
+
+        # Vector similarity search via Cosine Similarity
+        query_vector = self.vectorizer.transform([user_query])
+        similarities = cosine_similarity(query_vector, self.tfidf_matrix)[0]
+
+        # Get top-k indices
+        top_indices = similarities.argsort()[-top_k:][::-1]
+        retrieved_docs = [self.chunks[i] for i in top_indices if similarities[i] > 0]
+
+        # Fallback if query terms didn't match specific n-grams
+        if not retrieved_docs:
+            retrieved_docs = self.chunks[:top_k]
 
         context_str = "\n\n---\n\n".join([doc.page_content for doc in retrieved_docs])
 
