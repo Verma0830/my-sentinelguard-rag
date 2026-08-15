@@ -1,0 +1,13 @@
+# Antigravity RAG System Overview
+
+RAG Navigator is a lightweight, high-performance Retrieval-Augmented Generation system.
+
+## Key Features
+1. Document Ingestion: Loads PDFs, TXT, and Markdown files automatically.
+2. Chroma Vector Database: Indexes document text into dense semantic vector embeddings.
+3. Gemini AI Generation: Generates accurate, grounded responses based strictly on retrieved passages.
+4. Source Attribution: Displays exact page numbers and file names for every answer provided.
+
+## Security & Privacy
+The system stores vector embeddings locally on the user's filesystem in the `chroma_db` directory.
+When using the Google Gemini API, standard enterprise encryption in transit protects prompt data.
