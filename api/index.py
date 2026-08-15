@@ -1,4 +1,4 @@
-# Vercel SQLite Compatibility Fix
+# Vercel SQLite & Read-Only Filesystem Compatibility Fix
 try:
     __import__('pysqlite3')
     import sys
@@ -11,6 +11,11 @@ import sys
 import time
 from typing import Optional
 from fastapi import FastAPI, HTTPException
+
+# Set writable cache directories for Vercel serverless environment
+os.environ["FASTEMBED_CACHE_DIR"] = "/tmp/fastembed_cache"
+os.environ["HF_HOME"] = "/tmp/hf_home"
+os.environ["TMPDIR"] = "/tmp"
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 

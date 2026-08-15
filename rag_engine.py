@@ -1,6 +1,12 @@
 import os
+import sys
 import shutil
 from typing import List, Dict, Any, Tuple
+
+# Set writable cache directories for Vercel serverless environment
+os.environ["FASTEMBED_CACHE_DIR"] = "/tmp/fastembed_cache"
+os.environ["HF_HOME"] = "/tmp/hf_home"
+os.environ["TMPDIR"] = "/tmp"
 
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -11,7 +17,20 @@ from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.documents import Document
 
-PERSIST_DIRECTORY = os.path.join(os.path.dirname(__file__), "chroma_db")
+def get_persist_directory() -> str:
+    """Returns /tmp/chroma_db on Vercel serverless read-only environments."""
+    orig_dir = os.path.join(os.path.dirname(__file__), "chroma_db")
+    if os.getenv("VERCEL") or not os.access(os.path.dirname(__file__), os.W_OK):
+        tmp_dir = "/tmp/chroma_db"
+        if not os.path.exists(tmp_dir) and os.path.exists(orig_dir):
+            try:
+                shutil.copytree(orig_dir, tmp_dir, dirs_exist_ok=True)
+                return tmp_dir
+            except Exception as e:
+                print(f"Notice: Failed to mirror chroma_db to /tmp: {e}")
+        elif os.path.exists(tmp_dir):
+            return tmp_dir
+    return orig_dir
 
 class RAGEngine:
     def __init__(self, google_api_key: str = None):
@@ -42,9 +61,10 @@ class RAGEngine:
         reset_db: bool = True
     ) -> int:
         """Processes files, splits into chunks, and saves to Chroma Vector DB."""
-        if reset_db and os.path.exists(PERSIST_DIRECTORY):
+        target_dir = get_persist_directory()
+        if reset_db and os.path.exists(target_dir):
             try:
-                shutil.rmtree(PERSIST_DIRECTORY)
+                shutil.rmtree(target_dir)
             except Exception as e:
                 print(f"Notice: Could not clear existing vector DB directory ({e}). Overwriting existing collection.")
 
@@ -67,7 +87,7 @@ class RAGEngine:
         vector_store = Chroma.from_documents(
             documents=chunks,
             embedding=self.embeddings,
-            persist_directory=PERSIST_DIRECTORY
+            persist_directory=target_dir
         )
         return len(chunks)
 
@@ -77,15 +97,16 @@ class RAGEngine:
         top_k: int = 4, 
         model_name: str = "nvidia/nemotron-3.5-lightning:free"
     ) -> Dict[str, Any]:
-        """Searches vector store and generates an answer using LLM."""
-        if not os.path.exists(PERSIST_DIRECTORY):
+        """Queries the RAG pipeline using Chroma vector store & LLM."""
+        target_dir = get_persist_directory()
+        if not os.path.exists(target_dir):
             return {
-                "answer": "No documents have been indexed yet. Please upload a document first.",
+                "answer": "Vector database does not exist. Please run ingest_ms_security_docs.py to build the database.",
                 "sources": []
             }
 
         vector_store = Chroma(
-            persist_directory=PERSIST_DIRECTORY,
+            persist_directory=target_dir,
             embedding_function=self.embeddings
         )
 
