@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Tuple
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.embeddings import FastEmbedEmbeddings
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
@@ -19,8 +19,8 @@ class RAGEngine:
         self.embeddings = self._get_embeddings()
 
     def _get_embeddings(self):
-        """Uses fast local HuggingFace embeddings for vector storage."""
-        return HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+        """Uses lightweight ONNX FastEmbed embeddings for vector storage (No PyTorch)."""
+        return FastEmbedEmbeddings(model_name="BAAI/bge-small-en-v1.5")
 
     def load_document(self, file_path: str) -> List[Document]:
         """Loads a PDF, TXT, or Markdown document into LangChain Document format."""
