@@ -96,7 +96,7 @@ class RAGEngine:
             question=user_query
         )
 
-        active_key = self.google_api_key or os.getenv("OPENROUTER_API_KEY") or os.getenv("GOOGLE_API_KEY") or "openrouter"
+        active_key = self.google_api_key or os.getenv("OPENROUTER_API_KEY") or os.getenv("GOOGLE_API_KEY") or ""
 
         try:
             if "/" in model_name or "nvidia" in model_name or "openrouter" in model_name:
